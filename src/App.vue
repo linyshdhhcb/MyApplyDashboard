@@ -193,44 +193,46 @@ onMounted(() => {
 
 <template>
   <main class="app-shell">
-    <aside class="site-sidebar">
-      <div class="sidebar-header">
-        <p class="eyebrow">Electron Dashboard</p>
-        <h1>招聘官网双列看板</h1>
-        <p class="sidebar-copy">
-          站点列表来自 <code>src/config/sites.js</code>。点击卡片可装载到当前激活面板，所有面板与新窗口共享同一个 Electron 会话。
-        </p>
-      </div>
+    <header class="top-bar">
+      <aside class="site-sidebar">
+        <div class="sidebar-header">
+          <p class="eyebrow">Electron Dashboard</p>
+          <h1>招聘官网双列看板</h1>
+          <p class="sidebar-copy">
+            站点列表来自 <code>src/config/sites.js</code>。点击卡片可装载到当前激活面板，所有面板与新窗口共享同一个 Electron 会话。
+          </p>
+        </div>
 
-      <div class="target-switch">
-        <button
-          v-for="panel in panels"
-          :key="panel.key"
-          :class="['target-chip', { active: activeTarget === panel.key }]"
-          type="button"
-          @click="activeTarget = panel.key"
-        >
-          发送到{{ panel.key === 'left' ? '左侧' : '右侧' }}
-        </button>
-      </div>
+        <div class="target-switch">
+          <button
+            v-for="panel in panels"
+            :key="panel.key"
+            :class="['target-chip', { active: activeTarget === panel.key }]"
+            type="button"
+            @click="activeTarget = panel.key"
+          >
+            发送到{{ panel.key === 'left' ? '左侧' : '右侧' }}
+          </button>
+        </div>
 
-      <div v-if="hasSites" class="site-list">
-        <button
-          v-for="site in siteConfigs"
-          :key="site.id"
-          class="site-card"
-          type="button"
-          @click="loadSiteIntoPanel(site)"
-        >
-          <strong>{{ site.title }}</strong>
-          <span>{{ site.url }}</span>
-        </button>
-      </div>
+        <div v-if="hasSites" class="site-list">
+          <button
+            v-for="site in siteConfigs"
+            :key="site.id"
+            class="site-card"
+            type="button"
+            @click="loadSiteIntoPanel(site)"
+          >
+            <strong>{{ site.title }}</strong>
+            <span>{{ site.url }}</span>
+          </button>
+        </div>
 
-      <div v-else class="empty-card">
-        没有读取到站点，请检查 <code>src/config/sites.js</code>。
-      </div>
-    </aside>
+        <div v-else class="empty-card">
+          没有读取到站点，请检查 <code>src/config/sites.js</code>。
+        </div>
+      </aside>
+    </header>
 
     <section class="panel-stage">
       <article
