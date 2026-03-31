@@ -178,7 +178,7 @@ onMounted(() => {
           <p class="eyebrow">Electron Dashboard</p>
           <h1>招聘官网看板 </h1>
           <p class="sidebar-copy">
-            已自动加载 {{ siteConfigs.length }} 个招聘官网，每个官网独立显示在卡片中。
+            所有招聘官网已自动加载，每个官网独立显示在双列看板中。
           </p>
         </div>
       </div>
