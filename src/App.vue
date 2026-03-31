@@ -1,105 +1,288 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import siteConfigs from './config/sites'
 
-const MIN_SCALE = 0.6
-const MAX_SCALE = 1.8
-const SCALE_STEP = 0.1
+const APP_PARTITION = 'persist:my-apply-dashboard'
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 2
+const ZOOM_STEP = 0.1
 
-function normalizeUrl(url) {
-  if (!url) return ''
-  const trimmed = url.trim()
+function normalizeUrl(value) {
+  if (!value) return ''
+  const trimmed = value.trim()
   if (!trimmed) return ''
   if (/^https?:\/\//i.test(trimmed)) return trimmed
   return `https://${trimmed}`
 }
 
-const panels = ref(
-  siteConfigs.map((site, index) => ({
-    id: site.id ?? `site-${index + 1}`,
-    title: site.title || `站点 ${index + 1}`,
-    inputUrl: normalizeUrl(site.url),
-    currentUrl: normalizeUrl(site.url),
-    scale: 1,
-    reloadSeed: 0
-  }))
-)
+function createPanel(key, site) {
+  const initialUrl = normalizeUrl(site?.url || '')
 
-const isEmpty = computed(() => panels.value.length === 0)
-
-function refreshPanel(panel) {
-  panel.reloadSeed += 1
+  return {
+    key,
+    title: site?.title || '未选择站点',
+    inputUrl: initialUrl,
+    currentUrl: initialUrl,
+    zoom: 1,
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false
+  }
 }
 
-function zoomIn(panel) {
-  panel.scale = Math.min(MAX_SCALE, Number((panel.scale + SCALE_STEP).toFixed(2)))
+const initialLeft = siteConfigs[0]
+const initialRight = siteConfigs[1] || siteConfigs[0]
+
+const panels = ref([
+  createPanel('left', initialLeft),
+  createPanel('right', initialRight)
+])
+
+const webviews = ref({})
+const activeTarget = ref('left')
+
+const hasSites = computed(() => siteConfigs.length > 0)
+
+function panelByKey(key) {
+  return panels.value.find((panel) => panel.key === key)
 }
 
-function zoomOut(panel) {
-  panel.scale = Math.max(MIN_SCALE, Number((panel.scale - SCALE_STEP).toFixed(2)))
+function setWebviewRef(key, el) {
+  if (el) {
+    webviews.value[key] = el
+  } else {
+    delete webviews.value[key]
+  }
 }
 
-function resetZoom(panel) {
-  panel.scale = 1
+function syncPanelState(panel) {
+  const view = webviews.value[panel.key]
+  if (!view) return
+
+  panel.canGoBack = view.canGoBack()
+  panel.canGoForward = view.canGoForward()
+}
+
+function bindWebviewEvents(panel) {
+  const view = webviews.value[panel.key]
+  if (!view || view.dataset.bound === 'true') return
+
+  view.dataset.bound = 'true'
+
+  view.addEventListener('did-start-loading', () => {
+    panel.isLoading = true
+  })
+
+  view.addEventListener('did-stop-loading', () => {
+    panel.isLoading = false
+    panel.currentUrl = view.getURL() || panel.currentUrl
+    panel.inputUrl = panel.currentUrl
+    syncPanelState(panel)
+  })
+
+  view.addEventListener('did-navigate', () => {
+    panel.currentUrl = view.getURL() || panel.currentUrl
+    panel.inputUrl = panel.currentUrl
+    syncPanelState(panel)
+  })
+
+  view.addEventListener('did-navigate-in-page', () => {
+    panel.currentUrl = view.getURL() || panel.currentUrl
+    panel.inputUrl = panel.currentUrl
+    syncPanelState(panel)
+  })
+
+  view.addEventListener('page-title-updated', (event) => {
+    if (event.title) {
+      panel.title = event.title
+    }
+  })
+
+  view.addEventListener('new-window', (event) => {
+    if (event.url) {
+      window.electronAPI?.openSiteWindow(event.url)
+    }
+  })
+}
+
+function ensureWebview(panel) {
+  nextTick(() => {
+    const view = webviews.value[panel.key]
+    if (!view) return
+
+    bindWebviewEvents(panel)
+    view.setZoomFactor(panel.zoom)
+    syncPanelState(panel)
+  })
+}
+
+function loadSiteIntoPanel(site, targetKey = activeTarget.value) {
+  const panel = panelByKey(targetKey)
+  if (!panel) return
+
+  panel.title = site.title
+  panel.currentUrl = normalizeUrl(site.url)
+  panel.inputUrl = panel.currentUrl
 }
 
 function navigate(panel) {
   const nextUrl = normalizeUrl(panel.inputUrl)
   if (!nextUrl) return
-  panel.inputUrl = nextUrl
+
   panel.currentUrl = nextUrl
-  refreshPanel(panel)
+  panel.inputUrl = nextUrl
 }
 
-function openExternal(panel) {
-  if (!panel.currentUrl) return
-  window.open(panel.currentUrl, '_blank', 'noopener,noreferrer')
+function reload(panel) {
+  const view = webviews.value[panel.key]
+  if (view) {
+    view.reload()
+  }
 }
+
+function goBack(panel) {
+  const view = webviews.value[panel.key]
+  if (view?.canGoBack()) {
+    view.goBack()
+  }
+}
+
+function goForward(panel) {
+  const view = webviews.value[panel.key]
+  if (view?.canGoForward()) {
+    view.goForward()
+  }
+}
+
+function updateZoom(panel, nextZoom) {
+  const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(nextZoom.toFixed(2))))
+  panel.zoom = clamped
+
+  const view = webviews.value[panel.key]
+  if (view) {
+    view.setZoomFactor(panel.zoom)
+  }
+}
+
+function zoomIn(panel) {
+  updateZoom(panel, panel.zoom + ZOOM_STEP)
+}
+
+function zoomOut(panel) {
+  updateZoom(panel, panel.zoom - ZOOM_STEP)
+}
+
+function resetZoom(panel) {
+  updateZoom(panel, 1)
+}
+
+function openInWindow(panel) {
+  if (!panel.currentUrl) return
+  window.electronAPI?.openSiteWindow(panel.currentUrl)
+}
+
+function openInBrowser(panel) {
+  if (!panel.currentUrl) return
+  window.electronAPI?.openExternalBrowser(panel.currentUrl)
+}
+
+onMounted(() => {
+  panels.value.forEach((panel) => ensureWebview(panel))
+})
 </script>
 
 <template>
-  <main class="dashboard">
-    <header class="dashboard-header">
-      <h1>网站投稿看板</h1>
-      <p>地址配置于 <code>src/config/sites.js</code>，默认多开，支持每个窗口独立操作。</p>
-    </header>
+  <main class="app-shell">
+    <aside class="site-sidebar">
+      <div class="sidebar-header">
+        <p class="eyebrow">Electron Dashboard</p>
+        <h1>招聘官网双列看板</h1>
+        <p class="sidebar-copy">
+          站点列表来自 <code>src/config/sites.js</code>。点击卡片可装载到当前激活面板，所有面板与新窗口共享同一个 Electron 会话。
+        </p>
+      </div>
 
-    <section v-if="isEmpty" class="empty-state">
-      <p>没有读取到有效网址，请检查 <code>src/config/sites.js</code> 配置站点。</p>
-    </section>
+      <div class="target-switch">
+        <button
+          v-for="panel in panels"
+          :key="panel.key"
+          :class="['target-chip', { active: activeTarget === panel.key }]"
+          type="button"
+          @click="activeTarget = panel.key"
+        >
+          发送到{{ panel.key === 'left' ? '左侧' : '右侧' }}
+        </button>
+      </div>
 
-    <section v-else class="panel-grid">
-      <article v-for="panel in panels" :key="panel.id" class="panel-card">
-        <div class="panel-toolbar">
-          <strong class="panel-title">{{ panel.title }}</strong>
+      <div v-if="hasSites" class="site-list">
+        <button
+          v-for="site in siteConfigs"
+          :key="site.id"
+          class="site-card"
+          type="button"
+          @click="loadSiteIntoPanel(site)"
+        >
+          <strong>{{ site.title }}</strong>
+          <span>{{ site.url }}</span>
+        </button>
+      </div>
 
-          <div class="toolbar-actions">
-            <button type="button" @click="refreshPanel(panel)">刷新</button>
-            <button type="button" @click="zoomOut(panel)">缩小</button>
-            <button type="button" @click="zoomIn(panel)">放大</button>
-            <button type="button" @click="resetZoom(panel)">1:1</button>
-            <button type="button" @click="openExternal(panel)">新开</button>
-            <span class="zoom-label">{{ Math.round(panel.scale * 100) }}%</span>
+      <div v-else class="empty-card">
+        没有读取到站点，请检查 <code>src/config/sites.js</code>。
+      </div>
+    </aside>
+
+    <section class="panel-stage">
+      <article
+        v-for="panel in panels"
+        :key="panel.key"
+        :class="['browser-panel', { focused: activeTarget === panel.key }]"
+        @click="activeTarget = panel.key"
+      >
+        <header class="panel-header">
+          <div class="panel-heading">
+            <span class="panel-label">{{ panel.key === 'left' ? '左侧面板' : '右侧面板' }}</span>
+            <strong>{{ panel.title }}</strong>
           </div>
-        </div>
 
-        <form class="url-form" @submit.prevent="navigate(panel)">
-          <input v-model.trim="panel.inputUrl" type="text" :placeholder="panel.currentUrl || '请输入网址（例如 https://example.com）'" />
-          <button type="submit">跳转</button>
+          <div class="panel-actions">
+            <button type="button" @click.stop="goBack(panel)" :disabled="!panel.canGoBack">后退</button>
+            <button type="button" @click.stop="goForward(panel)" :disabled="!panel.canGoForward">前进</button>
+            <button type="button" @click.stop="reload(panel)">刷新</button>
+            <button type="button" @click.stop="zoomOut(panel)">缩小</button>
+            <button type="button" @click.stop="zoomIn(panel)">放大</button>
+            <button type="button" @click.stop="resetZoom(panel)">100%</button>
+            <button type="button" @click.stop="openInWindow(panel)">新窗口</button>
+            <button type="button" @click.stop="openInBrowser(panel)">浏览器打开</button>
+          </div>
+        </header>
+
+        <form class="address-bar" @submit.prevent="navigate(panel)">
+          <input
+            v-model.trim="panel.inputUrl"
+            type="text"
+            :placeholder="panel.currentUrl || '输入官网地址后回车'"
+          />
+          <button type="submit">打开</button>
+          <span class="zoom-readout">{{ Math.round(panel.zoom * 100) }}%</span>
         </form>
 
-        <div class="frame-shell">
-          <iframe
-            :key="`${panel.id}-${panel.reloadSeed}`"
+        <div class="panel-status">
+          <span :class="['status-dot', { loading: panel.isLoading }]" />
+          <span class="status-text">
+            {{ panel.isLoading ? '正在加载' : '已就绪' }}
+          </span>
+          <span class="status-url">{{ panel.currentUrl }}</span>
+        </div>
+
+        <div class="webview-shell">
+          <webview
+            :ref="(el) => setWebviewRef(panel.key, el)"
             :src="panel.currentUrl"
-            class="site-frame"
-            :style="{
-              transform: `scale(${panel.scale})`,
-              width: `calc(100% / ${panel.scale})`,
-              height: `calc(100% / ${panel.scale})`
-            }"
-            loading="lazy"
-            referrerpolicy="no-referrer"
+            class="site-webview"
+            :partition="APP_PARTITION"
+            allowpopups
+            @dom-ready="ensureWebview(panel)"
           />
         </div>
       </article>
