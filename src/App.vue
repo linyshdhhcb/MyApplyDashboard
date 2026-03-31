@@ -36,6 +36,31 @@ const webviews = ref({})
 
 const hasSites = computed(() => siteConfigs.length > 0)
 
+const isSidebarVisible = ref(false)
+
+let hideSidebarTimeout = null
+
+function showSidebar() {
+  if (hideSidebarTimeout) {
+    clearTimeout(hideSidebarTimeout)
+    hideSidebarTimeout = null
+  }
+  isSidebarVisible.value = true
+}
+
+function hideSidebar() {
+  hideSidebarTimeout = setTimeout(() => {
+    isSidebarVisible.value = false
+  }, 300)
+}
+
+function scrollToPanel(panelKey) {
+  const panelElement = document.getElementById(`panel-${panelKey}`)
+  if (panelElement) {
+    panelElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 function panelByKey(key) {
   return panels.value.find((panel) => panel.key === key)
 }
@@ -172,6 +197,26 @@ onMounted(() => {
 
 <template>
   <main class="app-shell">
+    <div class="sidebar-trigger-area" @mouseenter="showSidebar"></div>
+    
+    <aside :class="['sidebar-nav', { visible: isSidebarVisible }]" @mouseenter="showSidebar" @mouseleave="hideSidebar">
+      <nav class="nav-content">
+        <div class="nav-header">
+          <h2>站点导航</h2>
+        </div>
+        <ul class="nav-list">
+          <li 
+            v-for="site in siteConfigs" 
+            :key="site.id"
+            class="nav-item"
+            @click="scrollToPanel(site.id)"
+          >
+            {{ site.title }}
+          </li>
+        </ul>
+      </nav>
+    </aside>
+
     <header class="top-bar">
       <div class="top-bar-content">
         <div class="sidebar-header">
@@ -188,6 +233,7 @@ onMounted(() => {
       <article
         v-for="panel in panels"
         :key="panel.key"
+        :id="`panel-${panel.key}`"
         :class="['browser-panel', { focused: true }]"
       >
         <header class="panel-header">
