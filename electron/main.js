@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs/promises'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_PARTITION = 'persist:my-apply-dashboard'
@@ -80,4 +81,20 @@ ipcMain.handle('app:open-site-window', (_, url) => {
 
 ipcMain.handle('app:open-external-browser', (_, url) => {
   return shell.openExternal(url)
+})
+
+// 保存站点配置到文件
+ipcMain.handle('app:save-sites-config', async (_, sitesData) => {
+  try {
+    const rootDir = app.getAppPath()
+    const sitesPath = path.join(rootDir, 'src', 'config', 'sites.js')
+    
+    const content = `export default ${JSON.stringify(sitesData, null, 2)}\n`
+    await fs.writeFile(sitesPath, content, 'utf-8')
+    
+    return { success: true }
+  } catch (error) {
+    console.error('保存站点配置失败:', error)
+    return { success: false, error: error.message }
+  }
 })

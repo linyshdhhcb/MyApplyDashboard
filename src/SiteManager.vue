@@ -22,12 +22,21 @@ function loadSites() {
   }
 }
 
-// 保存站点到本地存储
-function saveSites() {
+// 保存站点到本地存储和文件
+async function saveSites() {
   try {
     localStorage.setItem(SITES_STORAGE_KEY, JSON.stringify(sites.value))
+    
+    if (window.electronAPI?.saveSitesConfig) {
+      const result = await window.electronAPI.saveSitesConfig(sites.value)
+      if (!result.success) {
+        throw new Error(result.error)
+      }
+    }
   } catch (e) {
-    console.error('保存站点配置失败:', e)
+    console.error('保存失败:', e)
+    alert('保存失败：' + e.message)
+    throw e
   }
 }
 
@@ -89,14 +98,13 @@ function generateId(title) {
 }
 
 // 保存站点（新增或编辑）
-function saveSite() {
+async function saveSite() {
   if (!formData.value.title.trim() || !formData.value.url.trim()) {
     alert('请填写完整信息')
     return
   }
 
   if (formMode.value === 'add') {
-    // 新增
     const newSite = {
       id: generateId(formData.value.title),
       title: formData.value.title.trim(),
@@ -104,7 +112,6 @@ function saveSite() {
     }
     sites.value.push(newSite)
   } else {
-    // 编辑
     const index = sites.value.findIndex(s => s.id === editingSite.value.id)
     if (index !== -1) {
       sites.value[index] = {
@@ -115,23 +122,24 @@ function saveSite() {
     }
   }
 
-  saveSites()
+  await saveSites()
   closeForm()
 }
 
 // 删除站点
-function deleteSite(site) {
+async function deleteSite(site) {
   if (confirm(`确定要删除 "${site.title}" 吗？此操作不可恢复。`)) {
     sites.value = sites.value.filter(s => s.id !== site.id)
-    saveSites()
+    await saveSites()
   }
 }
 
 // 重置为默认配置
-function resetToDefault() {
+async function resetToDefault() {
   if (confirm('确定要重置为默认配置吗？所有自定义修改将丢失。')) {
     sites.value = [...siteConfigs]
     localStorage.removeItem(SITES_STORAGE_KEY)
+    await saveSites()
   }
 }
 
@@ -148,18 +156,17 @@ function exportConfig() {
 }
 
 // 导入配置
-function importConfig(event) {
+async function importConfig(event) {
   const file = event.target.files[0]
   if (!file) return
 
   const reader = new FileReader()
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const imported = JSON.parse(e.target.result)
       if (Array.isArray(imported)) {
         sites.value = imported
-        saveSites()
-        alert('配置导入成功！')
+        await saveSites()
       } else {
         alert('无效的配置文件格式')
       }

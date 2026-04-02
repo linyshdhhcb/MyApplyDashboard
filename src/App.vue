@@ -31,11 +31,30 @@ function createPanel(site) {
   }
 }
 
-const panels = ref(siteConfigs.map(site => createPanel(site)))
+const SITES_STORAGE_KEY = 'my-apply-dashboard-sites'
+
+// 获取站点配置（优先从 localStorage 加载）
+function getSites() {
+  try {
+    const saved = localStorage.getItem(SITES_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    }
+  } catch (e) {
+    console.error('加载保存的站点配置失败:', e)
+  }
+  // 如果没有保存的数据，返回默认配置
+  return siteConfigs
+}
+
+const panels = ref(getSites().map(site => createPanel(site)))
 
 const webviews = ref({})
 
-const hasSites = computed(() => siteConfigs.length > 0)
+const sites = computed(() => getSites())
 
 const isSidebarVisible = ref(false)
 
@@ -195,6 +214,30 @@ function openInBrowser(panel) {
 
 function toggleSiteManager() {
   showSiteManager.value = !showSiteManager.value
+  // 从管理页面返回时，重新加载面板数据
+  if (!showSiteManager.value) {
+    reloadPanels()
+  }
+}
+
+// 重新加载面板数据
+function reloadPanels() {
+  const currentSites = getSites()
+  const oldPanelsMap = new Map(panels.value.map(p => [p.key, p]))
+  
+  panels.value = currentSites.map(site => {
+    const oldPanel = oldPanelsMap.get(site.id)
+    if (oldPanel) {
+      // 保留旧的面板状态（URL、缩放等）
+      return {
+        ...oldPanel,
+        title: site.title,
+        inputUrl: site.url,
+        currentUrl: site.url
+      }
+    }
+    return createPanel(site)
+  })
 }
 
 onMounted(() => {
@@ -216,7 +259,7 @@ onMounted(() => {
           </div>
           <ul class="nav-list">
             <li 
-              v-for="site in siteConfigs" 
+              v-for="site in sites" 
               :key="site.id"
               class="nav-item"
               @click="scrollToPanel(site.id)"
@@ -233,7 +276,7 @@ onMounted(() => {
             <h1>招聘官网看板</h1>
             <p class="eyebrow">Electron Dashboard</p>
             <p class="sidebar-copy">
-              已自动加载 {{ siteConfigs.length }} 个招聘官网，每个官网独立显示在卡片中。
+              已自动加载 {{ sites.length }} 个招聘官网，每个官网独立显示在卡片中。
             </p>
           </div>
           <button @click="toggleSiteManager" class="manager-btn">
