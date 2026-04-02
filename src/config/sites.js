@@ -20,11 +20,6 @@ export default [
     url: 'https://talent.baidu.com/jobs/list'
   },
   {
-    id: 'bytedance-campus',
-    title: '字节跳动校园招聘',
-    url: 'https://jobs.bytedance.com/campus/position?keywords=&category=&location=&project=7194661644654577981%2C7194661126919358757&type=&job_hot_flag=&current=1&limit=10&functionCategory=&tag='
-  },
-  {
     id: 'bytedance-referral',
     title: '字节跳动应聘记录',
     url: 'https://jobs.bytedance.com/referral/campus/pc/position/application?token=MTsxNzc0MzM2NDg0OTE3Ozc2MTMyMTIwOTg1MzEwMzQ2Mjk7NzU5MjEzNzIxMDQ5NDE3NTQ5Mzsx'

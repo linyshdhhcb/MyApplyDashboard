@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import siteConfigs from './config/sites'
+import SiteManager from './SiteManager.vue'
 
 const APP_PARTITION = 'persist:my-apply-dashboard'
 const MIN_ZOOM = 0.5
@@ -37,6 +38,8 @@ const webviews = ref({})
 const hasSites = computed(() => siteConfigs.length > 0)
 
 const isSidebarVisible = ref(false)
+
+const showSiteManager = ref(false)
 
 let hideSidebarTimeout = null
 
@@ -190,6 +193,10 @@ function openInBrowser(panel) {
   window.electronAPI?.openExternalBrowser(panel.currentUrl)
 }
 
+function toggleSiteManager() {
+  showSiteManager.value = !showSiteManager.value
+}
+
 onMounted(() => {
   panels.value.forEach((panel) => ensureWebview(panel))
 })
@@ -197,91 +204,99 @@ onMounted(() => {
 
 <template>
   <main class="app-shell">
-    <div class="sidebar-trigger-area" @mouseenter="showSidebar"></div>
+    <SiteManager v-if="showSiteManager" @close="toggleSiteManager" />
     
-    <aside :class="['sidebar-nav', { visible: isSidebarVisible }]" @mouseenter="showSidebar" @mouseleave="hideSidebar">
-      <nav class="nav-content">
-        <div class="nav-header">
-          <h2>站点导航</h2>
-        </div>
-        <ul class="nav-list">
-          <li 
-            v-for="site in siteConfigs" 
-            :key="site.id"
-            class="nav-item"
-            @click="scrollToPanel(site.id)"
-          >
-            {{ site.title }}
-          </li>
-        </ul>
-      </nav>
-    </aside>
+    <template v-else>
+      <div class="sidebar-trigger-area" @mouseenter="showSidebar"></div>
+      
+      <aside :class="['sidebar-nav', { visible: isSidebarVisible }]" @mouseenter="showSidebar" @mouseleave="hideSidebar">
+        <nav class="nav-content">
+          <div class="nav-header">
+            <h2>站点导航</h2>
+          </div>
+          <ul class="nav-list">
+            <li 
+              v-for="site in siteConfigs" 
+              :key="site.id"
+              class="nav-item"
+              @click="scrollToPanel(site.id)"
+            >
+              {{ site.title }}
+            </li>
+          </ul>
+        </nav>
+      </aside>
 
-    <header class="top-bar">
-      <div class="top-bar-content">
-        <div class="sidebar-header">
-          <p class="eyebrow">Electron Dashboard</p>
-          <h1>招聘官网看板 </h1>
-          <p class="sidebar-copy">
-            已自动加载 {{ siteConfigs.length }} 个招聘官网，每个官网独立显示在卡片中。
-          </p>
+      <header class="top-bar">
+        <div class="top-bar-content">
+          <div class="sidebar-header">
+            <h1>招聘官网看板</h1>
+            <p class="eyebrow">Electron Dashboard</p>
+            <p class="sidebar-copy">
+              已自动加载 {{ siteConfigs.length }} 个招聘官网，每个官网独立显示在卡片中。
+            </p>
+          </div>
+          <button @click="toggleSiteManager" class="manager-btn">
+            {{ showSiteManager ? '返回主页' : '站点管理' }}
+          </button>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <section class="panel-stage">
-      <article
-        v-for="panel in panels"
-        :key="panel.key"
-        :id="`panel-${panel.key}`"
-        :class="['browser-panel', { focused: true }]"
-      >
-        <header class="panel-header">
-          <div class="panel-heading">
-            <span class="panel-label">{{ panel.title }}</span>
-            <strong>{{ panel.title }}</strong>
+      <section class="panel-stage">
+        <article
+          v-for="panel in panels"
+          :key="panel.key"
+          :id="`panel-${panel.key}`"
+          :class="['browser-panel', { focused: true }]"
+        >
+          <header class="panel-header">
+            <div class="panel-heading">
+              <span class="panel-label">{{ panel.title }}</span>
+              <strong>{{ panel.title }}</strong>
+            </div>
+
+            <div class="panel-actions">
+              <button type="button" @click.stop="goBack(panel)" :disabled="!panel.canGoBack">后退</button>
+              <button type="button" @click.stop="goForward(panel)" :disabled="!panel.canGoForward">前进</button>
+              <button type="button" @click.stop="reload(panel)">刷新</button>
+              <button type="button" @click.stop="zoomOut(panel)">缩小</button>
+              <button type="button" @click.stop="zoomIn(panel)">放大</button>
+              <button type="button" @click.stop="resetZoom(panel)">100%</button>
+              <button type="button" @click.stop="openInBrowser(panel)">浏览器打开</button>
+            </div>
+          </header>
+
+          <form class="address-bar" @submit.prevent="navigate(panel)">
+            <input
+              v-model.trim="panel.inputUrl"
+              type="text"
+              :placeholder="panel.currentUrl || '输入官网地址后回车'"
+            />
+            <button type="submit">打开</button>
+            <span class="zoom-readout">{{ Math.round(panel.zoom * 100) }}%</span>
+          </form>
+
+          <div class="panel-status">
+            <span :class="['status-dot', { loading: panel.isLoading }]" />
+            <span class="status-text">
+              {{ panel.isLoading ? '正在加载' : '已就绪' }}
+            </span>
+            <span class="status-url">{{ panel.currentUrl }}</span>
           </div>
 
-          <div class="panel-actions">
-            <button type="button" @click.stop="goBack(panel)" :disabled="!panel.canGoBack">后退</button>
-            <button type="button" @click.stop="goForward(panel)" :disabled="!panel.canGoForward">前进</button>
-            <button type="button" @click.stop="reload(panel)">刷新</button>
-            <button type="button" @click.stop="zoomOut(panel)">缩小</button>
-            <button type="button" @click.stop="zoomIn(panel)">放大</button>
-            <button type="button" @click.stop="resetZoom(panel)">100%</button>
-            <button type="button" @click.stop="openInBrowser(panel)">浏览器打开</button>
+          <div class="webview-shell">
+            <webview
+              :ref="(el) => setWebviewRef(panel.key, el)"
+              :src="panel.currentUrl"
+              class="site-webview"
+              :partition="APP_PARTITION"
+              allowpopups
+              @dom-ready="ensureWebview(panel)"
+            />
           </div>
-        </header>
-
-        <form class="address-bar" @submit.prevent="navigate(panel)">
-          <input
-            v-model.trim="panel.inputUrl"
-            type="text"
-            :placeholder="panel.currentUrl || '输入官网地址后回车'"
-          />
-          <button type="submit">打开</button>
-          <span class="zoom-readout">{{ Math.round(panel.zoom * 100) }}%</span>
-        </form>
-
-        <div class="panel-status">
-          <span :class="['status-dot', { loading: panel.isLoading }]" />
-          <span class="status-text">
-            {{ panel.isLoading ? '正在加载' : '已就绪' }}
-          </span>
-          <span class="status-url">{{ panel.currentUrl }}</span>
-        </div>
-
-        <div class="webview-shell">
-          <webview
-            :ref="(el) => setWebviewRef(panel.key, el)"
-            :src="panel.currentUrl"
-            class="site-webview"
-            :partition="APP_PARTITION"
-            allowpopups
-            @dom-ready="ensureWebview(panel)"
-          />
-        </div>
-      </article>
-    </section>
+        </article>
+      </section>
+    </template>
   </main>
 </template>
+
